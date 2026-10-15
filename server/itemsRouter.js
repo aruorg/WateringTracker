@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireGuest } from './requireGuest.js';
 import { isUuid, validatePlant } from './validation.js';
 
-const COLUMNS = 'id, owner_id, plant_name, water_every_days, last_watered_at, created_at';
+const COLUMNS = 'id, user_id, plant, days_between_watering, last_watered_at, created_at';
 
 const router = Router();
 
@@ -10,9 +10,9 @@ router.use(requireGuest);
 
 router.get('/', async (req, res) => {
   const { data, error } = await req.db
-    .from('items')
+    .from('plants')
     .select(COLUMNS)
-    .eq('owner_id', req.user.id)
+    .eq('user_id', req.user.id)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -29,12 +29,13 @@ router.post('/', async (req, res) => {
 
   // Build the row explicitly; never spread req.body into the database.
   const row = {
-    plant_name: values.plant_name,
-    water_every_days: values.water_every_days,
-    owner_id: req.user.id,
+    plant: values.plant,
+    days_between_watering: values.days_between_watering,
+    last_watered_at: new Date().toISOString(),
+    user_id: req.user.id,
   };
 
-  const { data, error } = await req.db.from('items').insert(row).select(COLUMNS).single();
+  const { data, error } = await req.db.from('plants').insert(row).select(COLUMNS).single();
 
   if (error) throw error;
 
@@ -50,10 +51,10 @@ router.patch('/:id/water', async (req, res) => {
   }
 
   const { data, error } = await req.db
-    .from('items')
+    .from('plants')
     .update({ last_watered_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('owner_id', req.user.id)
+    .eq('user_id', req.user.id)
     .select(COLUMNS);
 
   if (error) throw error;
@@ -74,10 +75,10 @@ router.delete('/:id', async (req, res) => {
   }
 
   const { data, error } = await req.db
-    .from('items')
+    .from('plants')
     .delete()
     .eq('id', id)
-    .eq('owner_id', req.user.id)
+    .eq('user_id', req.user.id)
     .select('id');
 
   if (error) throw error;

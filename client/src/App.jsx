@@ -1,44 +1,183 @@
 import { useEffect, useState } from 'react'
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Card,
-  CardActions,
   CardContent,
+  Chip,
   CircularProgress,
   Container,
+  IconButton,
+  LinearProgress,
   Stack,
+  SvgIcon,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { ensureGuestSession } from './supabase.js'
 import { createPlant, deletePlant, getPlants, waterPlant } from './api.js'
 import { PLANT_NAME_MAX, WATER_DAYS_MAX, WATER_DAYS_MIN, validatePlant } from './validation.js'
 
-const emptyForm = { plant_name: '', water_every_days: '' }
+const emptyForm = { plant: '', days_between_watering: '' }
+const DAY_MS = 86400000
+
+function LeafIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z" />
+    </SvgIcon>
+  )
+}
+
+function DropIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z" />
+    </SvgIcon>
+  )
+}
+
+function DeleteIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+    </SvgIcon>
+  )
+}
 
 // Whole calendar days until the plant is due (negative = overdue).
 function daysUntilDue(plant) {
   const due = new Date(plant.last_watered_at)
-  due.setDate(due.getDate() + plant.water_every_days)
+  due.setDate(due.getDate() + plant.days_between_watering)
   due.setHours(0, 0, 0, 0)
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  return Math.round((due - today) / 86400000)
+  return Math.round((due - today) / DAY_MS)
 }
 
 function dueStatus(plant) {
   const days = daysUntilDue(plant)
   if (days < 0) {
     const n = Math.abs(days)
-    return { text: `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`, color: 'error.main' }
+    return { text: `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`, color: 'error' }
   }
-  if (days === 0) return { text: 'Water today', color: 'warning.main' }
-  if (days === 1) return { text: 'Water tomorrow', color: 'text.secondary' }
-  return { text: `Water in ${days} days`, color: 'text.secondary' }
+  if (days === 0) return { text: 'Water today', color: 'warning' }
+  if (days === 1) return { text: 'Water tomorrow', color: 'success' }
+  return { text: `Water in ${days} days`, color: 'success' }
+}
+
+// How much of the watering interval is left, as a 0–100 "water level".
+function waterLevel(plant) {
+  const elapsed = (Date.now() - new Date(plant.last_watered_at)) / (plant.days_between_watering * DAY_MS)
+  return Math.round(Math.min(Math.max(1 - elapsed, 0), 1) * 100)
+}
+
+function Header({ plants }) {
+  const thirsty = plants.filter((plant) => daysUntilDue(plant) <= 0).length
+
+  let summary = 'Add your first plant to get started.'
+  if (plants.length > 0) {
+    const count = `${plants.length} ${plants.length === 1 ? 'plant' : 'plants'}`
+    summary = thirsty > 0 ? `${count} · ${thirsty} thirsty today` : `${count} · all happily watered`
+  }
+
+  return (
+    <Box
+      component="header"
+      sx={{
+        color: 'primary.contrastText',
+        background: 'linear-gradient(135deg, #1b5e36 0%, #2e7d4f 55%, #5fae7c 100%)',
+        borderBottomLeftRadius: { xs: 24, sm: 40 },
+        borderBottomRightRadius: { xs: 24, sm: 40 },
+        pt: { xs: 4, sm: 6 },
+        pb: { xs: 9, sm: 10 },
+      }}
+    >
+      <Container maxWidth="sm">
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.18)', width: 56, height: 56 }}>
+            <LeafIcon sx={{ fontSize: 32, color: '#d9f2c4' }} />
+          </Avatar>
+          <Box>
+            <Typography variant="h4" component="h1">
+              Watering Tracker
+            </Typography>
+            <Typography sx={{ opacity: 0.85 }}>{summary}</Typography>
+          </Box>
+        </Stack>
+      </Container>
+    </Box>
+  )
+}
+
+function PlantCard({ plant, watering, deleting, onWater, onDelete }) {
+  const status = dueStatus(plant)
+  const busy = watering || deleting
+
+  return (
+    <Card
+      sx={{
+        transition: 'box-shadow 0.2s, transform 0.2s',
+        '&:hover': { boxShadow: '0 6px 20px rgba(27, 94, 54, 0.12)', transform: 'translateY(-1px)' },
+      }}
+    >
+      <CardContent sx={{ '&:last-child': { pb: 2 } }}>
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+          <Avatar sx={{ bgcolor: '#e3f1dc', color: 'primary.dark', fontWeight: 800 }}>
+            {plant.plant.charAt(0).toUpperCase()}
+          </Avatar>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Typography variant="h6" noWrap>
+              {plant.plant}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Every {plant.days_between_watering} {plant.days_between_watering === 1 ? 'day' : 'days'} ·
+              last watered {new Date(plant.last_watered_at).toLocaleDateString()}
+            </Typography>
+          </Box>
+          <Chip label={status.text} color={status.color} size="small" variant={status.color === 'success' ? 'outlined' : 'filled'} />
+        </Stack>
+
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mt: 2 }}>
+          <DropIcon fontSize="small" sx={{ color: `${status.color}.main` }} />
+          <LinearProgress
+            variant="determinate"
+            value={waterLevel(plant)}
+            color={status.color}
+            sx={{ flexGrow: 1 }}
+            aria-label={`Water level for ${plant.plant}`}
+          />
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<DropIcon />}
+            onClick={onWater}
+            disabled={busy}
+          >
+            {watering ? 'Saving…' : 'Watered'}
+          </Button>
+          <Tooltip title="Delete plant">
+            <span>
+              <IconButton
+                aria-label={`Delete ${plant.plant}`}
+                onClick={onDelete}
+                disabled={busy}
+                size="small"
+                sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+              >
+                {deleting ? <CircularProgress size={18} /> : <DeleteIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+      </CardContent>
+    </Card>
+  )
 }
 
 function App() {
@@ -141,116 +280,115 @@ function App() {
 
   if (!sessionReady) {
     return (
-      <Container maxWidth="sm" sx={{ py: 4, textAlign: 'center' }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Starting guest session…</Typography>
-      </Container>
+      <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+        <Stack spacing={2} sx={{ alignItems: 'center' }}>
+          <CircularProgress />
+          <Typography color="text.secondary">Starting guest session…</Typography>
+        </Stack>
+      </Box>
     )
   }
 
   return (
-    <Container maxWidth="sm" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Watering Tracker
-      </Typography>
+    <Box sx={{ minHeight: '100vh', pb: 6 }}>
+      <Header plants={plants} />
 
-      <Card component="form" onSubmit={handleSubmit} noValidate sx={{ mb: 4 }}>
-        <CardContent>
-          <Stack spacing={2}>
-            <TextField
-              label="Plant name"
-              name="plant_name"
-              value={form.plant_name}
-              onChange={handleChange}
-              error={Boolean(fieldErrors.plant_name)}
-              helperText={fieldErrors.plant_name}
-              slotProps={{ htmlInput: { maxLength: PLANT_NAME_MAX } }}
-              required
-              fullWidth
-            />
-            <TextField
-              label="Water every (days)"
-              name="water_every_days"
-              type="number"
-              value={form.water_every_days}
-              onChange={handleChange}
-              error={Boolean(fieldErrors.water_every_days)}
-              helperText={fieldErrors.water_every_days}
-              slotProps={{ htmlInput: { min: WATER_DAYS_MIN, max: WATER_DAYS_MAX, step: 1 } }}
-              required
-              fullWidth
-            />
-            {submitError && <Alert severity="error">{submitError}</Alert>}
-          </Stack>
-        </CardContent>
-        <CardActions sx={{ px: 2, pb: 2 }}>
-          <Button type="submit" variant="contained" disabled={submitting}>
-            {submitting ? 'Adding…' : 'Add plant'}
-          </Button>
-        </CardActions>
-      </Card>
-
-      <Typography variant="h5" component="h2" gutterBottom>
-        My plants
-      </Typography>
-
-      {listError && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={<Button color="inherit" size="small" onClick={loadPlants}>Retry</Button>}
+      <Container maxWidth="sm" sx={{ mt: { xs: -6, sm: -7 } }}>
+        <Card
+          component="form"
+          onSubmit={handleSubmit}
+          noValidate
+          sx={{ mb: 4, boxShadow: '0 10px 30px rgba(27, 94, 54, 0.15)', border: 'none' }}
         >
-          {listError}
-        </Alert>
-      )}
+          <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+            <Typography variant="h6" gutterBottom>
+              Add a plant
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'flex-start' } }}>
+              <TextField
+                label="Plant name"
+                name="plant"
+                value={form.plant}
+                onChange={handleChange}
+                error={Boolean(fieldErrors.plant)}
+                helperText={fieldErrors.plant}
+                slotProps={{ htmlInput: { maxLength: PLANT_NAME_MAX } }}
+                required
+                fullWidth
+              />
+              <TextField
+                label="Every (days)"
+                name="days_between_watering"
+                type="number"
+                value={form.days_between_watering}
+                onChange={handleChange}
+                error={Boolean(fieldErrors.days_between_watering)}
+                helperText={fieldErrors.days_between_watering}
+                slotProps={{ htmlInput: { min: WATER_DAYS_MIN, max: WATER_DAYS_MAX, step: 1 } }}
+                required
+                sx={{ width: { xs: '100%', sm: 160 }, flexShrink: 0 }}
+              />
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                disabled={submitting}
+                startIcon={<LeafIcon />}
+                sx={{ flexShrink: 0, height: 56 }}
+              >
+                {submitting ? 'Adding…' : 'Add'}
+              </Button>
+            </Stack>
+            {submitError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {submitError}
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
 
-      {loadingPlants ? (
-        <Box sx={{ textAlign: 'center', py: 2 }}>
-          <CircularProgress />
-        </Box>
-      ) : plants.length === 0 && !listError ? (
-        <Typography color="text.secondary">No plants yet. Add your first one above.</Typography>
-      ) : (
-        <Stack spacing={2}>
-          {plants.map((plant) => {
-            const status = dueStatus(plant)
-            return (
-              <Card key={plant.id} variant="outlined">
-                <CardContent>
-                  <Typography variant="h6">{plant.plant_name}</Typography>
-                  <Typography color="text.secondary">
-                    Water every {plant.water_every_days}{' '}
-                    {plant.water_every_days === 1 ? 'day' : 'days'}
-                  </Typography>
-                  <Typography color="text.secondary">
-                    Last watered: {new Date(plant.last_watered_at).toLocaleDateString()}
-                  </Typography>
-                  <Typography sx={{ fontWeight: 500, color: status.color }}>
-                    {status.text}
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button
-                    variant="contained"
-                    onClick={() => handleWater(plant.id)}
-                    disabled={wateringId === plant.id || deletingId === plant.id}
-                  >
-                    {wateringId === plant.id ? 'Saving…' : 'Watered'}
-                  </Button>
-                  <Button
-                    color="error"
-                    onClick={() => handleDelete(plant.id)}
-                    disabled={deletingId === plant.id || wateringId === plant.id}
-                  >
-                    {deletingId === plant.id ? 'Deleting…' : 'Delete'}
-                  </Button>
-                </CardActions>
-              </Card>
-            )
-          })}
-        </Stack>
-      )}
-    </Container>
+        <Typography variant="h5" component="h2" sx={{ mb: 2 }}>
+          My plants
+        </Typography>
+
+        {listError && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={<Button color="inherit" size="small" onClick={loadPlants}>Retry</Button>}
+          >
+            {listError}
+          </Alert>
+        )}
+
+        {loadingPlants ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : plants.length === 0 && !listError ? (
+          <Card sx={{ textAlign: 'center', py: 5, px: 3, borderStyle: 'dashed', bgcolor: 'transparent' }}>
+            <LeafIcon sx={{ fontSize: 48, color: 'primary.light' }} />
+            <Typography variant="h6" sx={{ mt: 1 }}>
+              No plants yet
+            </Typography>
+            <Typography color="text.secondary">Add your first one above and we'll keep track of watering.</Typography>
+          </Card>
+        ) : (
+          <Stack spacing={2}>
+            {plants.map((plant) => (
+              <PlantCard
+                key={plant.id}
+                plant={plant}
+                watering={wateringId === plant.id}
+                deleting={deletingId === plant.id}
+                onWater={() => handleWater(plant.id)}
+                onDelete={() => handleDelete(plant.id)}
+              />
+            ))}
+          </Stack>
+        )}
+      </Container>
+    </Box>
   )
 }
 

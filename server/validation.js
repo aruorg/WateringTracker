@@ -11,31 +11,31 @@ export function validatePlant(body) {
     return { error: 'Request body must be a JSON object' };
   }
 
-  const { plant_name, water_every_days } = body;
+  const { plant, days_between_watering } = body;
 
-  if (typeof plant_name !== 'string') {
-    return { error: 'plant_name is required and must be a string' };
+  if (typeof plant !== 'string') {
+    return { error: 'plant is required and must be a string' };
   }
 
-  const name = plant_name.trim();
+  const name = plant.trim();
 
   if (!name) {
-    return { error: 'plant_name must not be blank' };
+    return { error: 'plant must not be blank' };
   }
   if (name.length > PLANT_NAME_MAX) {
-    return { error: `plant_name must be at most ${PLANT_NAME_MAX} characters` };
+    return { error: `plant must be at most ${PLANT_NAME_MAX} characters` };
   }
 
-  if (!Number.isInteger(water_every_days)) {
-    return { error: 'water_every_days is required and must be a whole number' };
+  if (!Number.isInteger(days_between_watering)) {
+    return { error: 'days_between_watering is required and must be a whole number' };
   }
-  if (water_every_days < WATER_DAYS_MIN || water_every_days > WATER_DAYS_MAX) {
+  if (days_between_watering < WATER_DAYS_MIN || days_between_watering > WATER_DAYS_MAX) {
     return {
-      error: `water_every_days must be between ${WATER_DAYS_MIN} and ${WATER_DAYS_MAX}`,
+      error: `days_between_watering must be between ${WATER_DAYS_MIN} and ${WATER_DAYS_MAX}`,
     };
   }
 
-  return { values: { plant_name: name, water_every_days } };
+  return { values: { plant: name, days_between_watering } };
 }
 
 export function isUuid(value) {
