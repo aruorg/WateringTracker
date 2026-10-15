@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireGuest } from './requireGuest.js';
 import { isUuid, validatePlant } from './validation.js';
 
-const COLUMNS = 'id, owner_id, plant_name, water_every_days, created_at';
+const COLUMNS = 'id, owner_id, plant_name, water_every_days, last_watered_at, created_at';
 
 const router = Router();
 
@@ -39,6 +39,30 @@ router.post('/', async (req, res) => {
   if (error) throw error;
 
   res.status(201).json(data);
+});
+
+// Mark a plant as watered right now.
+router.patch('/:id/water', async (req, res) => {
+  const { id } = req.params;
+
+  if (!isUuid(id)) {
+    return res.status(404).json({ error: 'Plant not found' });
+  }
+
+  const { data, error } = await req.db
+    .from('items')
+    .update({ last_watered_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('owner_id', req.user.id)
+    .select(COLUMNS);
+
+  if (error) throw error;
+
+  if (data.length === 0) {
+    return res.status(404).json({ error: 'Plant not found' });
+  }
+
+  res.status(200).json(data[0]);
 });
 
 router.delete('/:id', async (req, res) => {

@@ -49,6 +49,10 @@ export function createPlant(plant) {
   });
 }
 
+export function waterPlant(id) {
+  return request(`/api/items/${encodeURIComponent(id)}/water`, { method: 'PATCH' });
+}
+
 export function deletePlant(id) {
   return request(`/api/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

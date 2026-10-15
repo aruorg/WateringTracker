@@ -1,7 +1,7 @@
 // Keep these in sync with client/src/validation.js and the table's CHECK constraints.
-export const PLANT_NAME_MAX = 100;
+export const PLANT_NAME_MAX = 60;
 export const WATER_DAYS_MIN = 1;
-export const WATER_DAYS_MAX = 60;
+export const WATER_DAYS_MAX = 30;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

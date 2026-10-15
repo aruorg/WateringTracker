@@ -13,10 +13,33 @@ import {
   Typography,
 } from '@mui/material'
 import { ensureGuestSession } from './supabase.js'
-import { createPlant, deletePlant, getPlants } from './api.js'
+import { createPlant, deletePlant, getPlants, waterPlant } from './api.js'
 import { PLANT_NAME_MAX, WATER_DAYS_MAX, WATER_DAYS_MIN, validatePlant } from './validation.js'
 
 const emptyForm = { plant_name: '', water_every_days: '' }
+
+// Whole calendar days until the plant is due (negative = overdue).
+function daysUntilDue(plant) {
+  const due = new Date(plant.last_watered_at)
+  due.setDate(due.getDate() + plant.water_every_days)
+  due.setHours(0, 0, 0, 0)
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  return Math.round((due - today) / 86400000)
+}
+
+function dueStatus(plant) {
+  const days = daysUntilDue(plant)
+  if (days < 0) {
+    const n = Math.abs(days)
+    return { text: `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`, color: 'error.main' }
+  }
+  if (days === 0) return { text: 'Water today', color: 'warning.main' }
+  if (days === 1) return { text: 'Water tomorrow', color: 'text.secondary' }
+  return { text: `Water in ${days} days`, color: 'text.secondary' }
+}
 
 function App() {
   const [sessionReady, setSessionReady] = useState(false)
@@ -32,6 +55,7 @@ function App() {
   const [submitError, setSubmitError] = useState('')
 
   const [deletingId, setDeletingId] = useState(null)
+  const [wateringId, setWateringId] = useState(null)
 
   useEffect(() => {
     ensureGuestSession()
@@ -78,6 +102,19 @@ function App() {
       setSubmitError(error.message)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleWater(id) {
+    setWateringId(id)
+    setListError('')
+    try {
+      const updated = await waterPlant(id)
+      setPlants((prev) => prev.map((plant) => (plant.id === id ? updated : plant)))
+    } catch (error) {
+      setListError(error.message)
+    } finally {
+      setWateringId(null)
     }
   }
 
@@ -175,25 +212,42 @@ function App() {
         <Typography color="text.secondary">No plants yet. Add your first one above.</Typography>
       ) : (
         <Stack spacing={2}>
-          {plants.map((plant) => (
-            <Card key={plant.id} variant="outlined">
-              <CardContent>
-                <Typography variant="h6">{plant.plant_name}</Typography>
-                <Typography color="text.secondary">
-                  Water every {plant.water_every_days} {plant.water_every_days === 1 ? 'day' : 'days'}
-                </Typography>
-              </CardContent>
-              <CardActions>
-                <Button
-                  color="error"
-                  onClick={() => handleDelete(plant.id)}
-                  disabled={deletingId === plant.id}
-                >
-                  {deletingId === plant.id ? 'Deleting…' : 'Delete'}
-                </Button>
-              </CardActions>
-            </Card>
-          ))}
+          {plants.map((plant) => {
+            const status = dueStatus(plant)
+            return (
+              <Card key={plant.id} variant="outlined">
+                <CardContent>
+                  <Typography variant="h6">{plant.plant_name}</Typography>
+                  <Typography color="text.secondary">
+                    Water every {plant.water_every_days}{' '}
+                    {plant.water_every_days === 1 ? 'day' : 'days'}
+                  </Typography>
+                  <Typography color="text.secondary">
+                    Last watered: {new Date(plant.last_watered_at).toLocaleDateString()}
+                  </Typography>
+                  <Typography sx={{ fontWeight: 500, color: status.color }}>
+                    {status.text}
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button
+                    variant="contained"
+                    onClick={() => handleWater(plant.id)}
+                    disabled={wateringId === plant.id || deletingId === plant.id}
+                  >
+                    {wateringId === plant.id ? 'Saving…' : 'Watered'}
+                  </Button>
+                  <Button
+                    color="error"
+                    onClick={() => handleDelete(plant.id)}
+                    disabled={deletingId === plant.id || wateringId === plant.id}
+                  >
+                    {deletingId === plant.id ? 'Deleting…' : 'Delete'}
+                  </Button>
+                </CardActions>
+              </Card>
+            )
+          })}
         </Stack>
       )}
     </Container>
