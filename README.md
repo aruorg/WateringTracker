@@ -48,3 +48,14 @@ npm install
 cp .env.example .env.local   # then fill in the Supabase URL and publishable key
 npm run dev
 ```
+
+## Running the server
+
+```
+cd server
+npm install
+cp .env.example .env         # then fill in the Supabase URL and publishable key
+npm run dev
+```
+
+The server uses only the publishable key. Each request runs its queries with the guest's own JWT, so row-level security applies on top of the `owner_id` filters in the backend.
